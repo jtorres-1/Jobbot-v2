@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 
-const API = "http://localhost:5003/api";
+const API = "https://jobbotpro.org/api";
+
+const getToken = () => localStorage.getItem("jobbot_token");
+const authHeaders = () => ({
+  "Content-Type": "application/json",
+  "Authorization": `Bearer ${getToken()}`
+});
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500&display=swap');
@@ -106,27 +112,11 @@ const styles = `
     transition: all 0.15s;
   }
 
-  .btn-primary {
-    background: #00ff88;
-    color: #050a0f;
-  }
-
+  .btn-primary { background: #00ff88; color: #050a0f; }
   .btn-primary:hover { background: #00e077; transform: translateY(-1px); }
-
-  .btn-secondary {
-    background: transparent;
-    color: #00ff88;
-    border: 1px solid #00ff88;
-    margin-left: 12px;
-  }
-
+  .btn-secondary { background: transparent; color: #00ff88; border: 1px solid #00ff88; margin-left: 12px; }
   .btn-secondary:hover { background: #00ff8811; }
-
-  .btn-blue {
-    background: #0066ff;
-    color: #fff;
-  }
-
+  .btn-blue { background: #0066ff; color: #fff; }
   .btn-blue:hover { background: #0055dd; }
 
   .tag-input-wrapper { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -149,8 +139,7 @@ const styles = `
   .toggle-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 
   .toggle {
-    width: 44px;
-    height: 24px;
+    width: 44px; height: 24px;
     background: #1a2a3a;
     border-radius: 12px;
     cursor: pointer;
@@ -160,106 +149,40 @@ const styles = `
   }
 
   .toggle.on { background: #00ff88; }
-
   .toggle::after {
     content: '';
     position: absolute;
-    width: 18px;
-    height: 18px;
+    width: 18px; height: 18px;
     background: #fff;
     border-radius: 50%;
-    top: 3px;
-    left: 3px;
+    top: 3px; left: 3px;
     transition: left 0.2s;
   }
-
   .toggle.on::after { left: 23px; }
-
   .toggle-label { font-size: 14px; color: #7090b0; }
 
   .applications-table { width: 100%; border-collapse: collapse; }
-
   .applications-table th {
-    text-align: left;
-    padding: 12px 16px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #7090b0;
-    text-transform: uppercase;
+    text-align: left; padding: 12px 16px;
+    font-size: 12px; font-weight: 600;
+    color: #7090b0; text-transform: uppercase;
     letter-spacing: 0.05em;
     border-bottom: 1px solid #0066ff22;
   }
+  .applications-table td { padding: 14px 16px; font-size: 14px; border-bottom: 1px solid #0066ff11; }
 
-  .applications-table td {
-    padding: 14px 16px;
-    font-size: 14px;
-    border-bottom: 1px solid #0066ff11;
-  }
-
-  .status-applied {
-    color: #00ff88;
-    background: #00ff8811;
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .status-failed {
-    color: #ff4466;
-    background: #ff446611;
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-  }
+  .status-applied { color: #00ff88; background: #00ff8811; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .status-failed { color: #ff4466; background: #ff446611; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 
   .stat-row { display: flex; gap: 16px; margin-bottom: 24px; }
-
-  .stat-card {
-    flex: 1;
-    background: #0d1a2b;
-    border: 1px solid #0066ff22;
-    border-radius: 12px;
-    padding: 20px;
-  }
-
-  .stat-number {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 36px;
-    font-weight: 700;
-    color: #00ff88;
-  }
-
+  .stat-card { flex: 1; background: #0d1a2b; border: 1px solid #0066ff22; border-radius: 12px; padding: 20px; }
+  .stat-number { font-family: 'Space Grotesk', sans-serif; font-size: 36px; font-weight: 700; color: #00ff88; }
   .stat-label { font-size: 12px; color: #7090b0; margin-top: 4px; }
 
-  .auth-wrap {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    background: #050a0f;
-  }
-
-  .auth-card {
-    background: #0d1a2b;
-    border: 1px solid #0066ff22;
-    border-radius: 16px;
-    padding: 40px;
-    width: 100%;
-    max-width: 400px;
-  }
-
-  .auth-title {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 24px;
-    font-weight: 700;
-    margin-bottom: 4px;
-    color: #e0f0ff;
-  }
-
+  .auth-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #050a0f; }
+  .auth-card { background: #0d1a2b; border: 1px solid #0066ff22; border-radius: 16px; padding: 40px; width: 100%; max-width: 400px; }
+  .auth-title { font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 700; margin-bottom: 4px; color: #e0f0ff; }
   .auth-sub { color: #7090b0; font-size: 14px; margin-bottom: 28px; }
-
   .auth-switch { text-align: center; margin-top: 20px; font-size: 14px; color: #7090b0; }
   .auth-switch span { color: #00ff88; cursor: pointer; }
 
@@ -272,19 +195,21 @@ const styles = `
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
   .upload-area {
-    border: 2px dashed #0066ff44;
-    border-radius: 8px;
-    padding: 32px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 0.15s;
-    margin-bottom: 12px;
+    border: 2px dashed #0066ff44; border-radius: 8px;
+    padding: 32px; text-align: center; cursor: pointer;
+    transition: border-color 0.15s; margin-bottom: 12px;
   }
-
   .upload-area:hover { border-color: #00ff88; }
   .upload-icon { font-size: 32px; margin-bottom: 8px; }
   .upload-text { color: #7090b0; font-size: 14px; }
   .upload-text span { color: #00ff88; }
+
+  .resume-status {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px; border-radius: 8px;
+    background: #00ff8811; border: 1px solid #00ff8833;
+    color: #00ff88; font-size: 13px; margin-bottom: 16px;
+  }
 
   .link { color: #0066ff; text-decoration: none; font-size: 13px; }
   .link:hover { color: #00ff88; }
@@ -294,43 +219,16 @@ const styles = `
   .empty-text { font-size: 14px; }
 
   .landing {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 40px;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; padding: 40px;
     background: radial-gradient(ellipse at 50% 0%, #0066ff15 0%, #050a0f 60%);
   }
-
-  .landing-logo {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 48px;
-    font-weight: 700;
-    color: #e0f0ff;
-    margin-bottom: 16px;
-  }
-
+  .landing-logo { font-family: 'Space Grotesk', sans-serif; font-size: 48px; font-weight: 700; color: #e0f0ff; margin-bottom: 16px; }
   .landing-logo span { color: #00ff88; }
-
-  .landing-sub {
-    font-size: 18px;
-    color: #7090b0;
-    max-width: 480px;
-    margin-bottom: 40px;
-    line-height: 1.6;
-  }
-
-  .landing-price {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 14px;
-    color: #7090b0;
-    margin-top: 16px;
-  }
-
+  .landing-sub { font-size: 18px; color: #7090b0; max-width: 480px; margin-bottom: 40px; line-height: 1.6; }
+  .landing-price { font-family: 'Space Grotesk', sans-serif; font-size: 14px; color: #7090b0; margin-top: 16px; }
   .landing-price span { color: #00ff88; font-weight: 600; }
-
   .glow { text-shadow: 0 0 40px #00ff8844; }
 `;
 
@@ -340,29 +238,38 @@ export default function App() {
   const [authMode, setAuthMode] = useState("login");
 
   useEffect(() => {
-    const saved = localStorage.getItem("jobbot_user");
-    if (saved) {
-      setUser(JSON.parse(saved));
+    const token = localStorage.getItem("jobbot_token");
+    const email = localStorage.getItem("jobbot_email");
+    if (token && email) {
+      setUser({ token, email });
       setPage("dashboard");
     }
   }, []);
 
   const logout = () => {
-    localStorage.removeItem("jobbot_user");
+    localStorage.removeItem("jobbot_token");
+    localStorage.removeItem("jobbot_email");
     setUser(null);
     setPage("landing");
+  };
+
+  const onAuth = (data) => {
+    localStorage.setItem("jobbot_token", data.token);
+    localStorage.setItem("jobbot_email", data.email);
+    setUser({ token: data.token, email: data.email });
+    setPage("dashboard");
   };
 
   return (
     <>
       <style>{styles}</style>
       {page === "landing" && <Landing onGetStarted={() => { setAuthMode("register"); setPage("auth"); }} onLogin={() => { setAuthMode("login"); setPage("auth"); }} />}
-      {page === "auth" && <Auth mode={authMode} setMode={setAuthMode} onSuccess={(u) => { setUser(u); localStorage.setItem("jobbot_user", JSON.stringify(u)); setPage("dashboard"); }} />}
+      {page === "auth" && <Auth mode={authMode} setMode={setAuthMode} onSuccess={onAuth} />}
       {page !== "landing" && page !== "auth" && (
         <div className="app">
           <Sidebar page={page} setPage={setPage} logout={logout} />
           <div className="main">
-            {page === "dashboard" && <Dashboard user={user} />}
+            {page === "dashboard" && <Dashboard />}
             {page === "applications" && <Applications />}
             {page === "preferences" && <Preferences />}
             {page === "resume" && <Resume />}
@@ -400,12 +307,11 @@ function Auth({ mode, setMode, onSuccess }) {
       const res = await fetch(`${API}/${mode}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ email, password })
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
-      onSuccess({ email, subscribed: data.subscribed });
+      onSuccess(data);
     } catch {
       setError("Connection error");
       setLoading(false);
@@ -452,13 +358,13 @@ function Sidebar({ page, setPage, logout }) {
   );
 }
 
-function Dashboard({ user }) {
+function Dashboard() {
   const [apps, setApps] = useState([]);
   const [running, setRunning] = useState(false);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
-    fetch(`${API}/applications`, { credentials: "include" })
+    fetch(`${API}/applications`, { headers: authHeaders() })
       .then(r => r.json()).then(data => { if (Array.isArray(data)) setApps(data); });
   }, []);
 
@@ -466,7 +372,7 @@ function Dashboard({ user }) {
     setRunning(true);
     setMsg("");
     try {
-      const res = await fetch(`${API}/run`, { method: "POST", credentials: "include" });
+      const res = await fetch(`${API}/run`, { method: "POST", headers: authHeaders() });
       const data = await res.json();
       setMsg(data.message || data.error);
     } catch { setMsg("Connection error"); }
@@ -482,26 +388,15 @@ function Dashboard({ user }) {
       <div className="page-title">Dashboard</div>
       <div className="page-sub">Your job application overview</div>
       <div className="stat-row">
-        <div className="stat-card">
-          <div className="stat-number">{total}</div>
-          <div className="stat-label">Total Applications</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-number">{applied}</div>
-          <div className="stat-label">Successful</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-number" style={{ color: failed > 0 ? "#ff4466" : "#00ff88" }}>{failed}</div>
-          <div className="stat-label">Failed</div>
-        </div>
+        <div className="stat-card"><div className="stat-number">{total}</div><div className="stat-label">Total Applications</div></div>
+        <div className="stat-card"><div className="stat-number">{applied}</div><div className="stat-label">Successful</div></div>
+        <div className="stat-card"><div className="stat-number" style={{ color: failed > 0 ? "#ff4466" : "#00ff88" }}>{failed}</div><div className="stat-label">Failed</div></div>
       </div>
       <div className="card">
         <div className="card-title">Run Bot</div>
         <p style={{ color: "#7090b0", fontSize: "14px", marginBottom: "20px" }}>Bot will scrape Greenhouse, Lever, and Workable for matching jobs and auto-apply using your resume and preferences.</p>
         <div className="run-btn-wrap">
-          <button className="btn btn-primary" onClick={runBot} disabled={running}>
-            {running ? "Running..." : "Run Now"}
-          </button>
+          <button className="btn btn-primary" onClick={runBot} disabled={running}>{running ? "Running..." : "Run Now"}</button>
           {running && <div className="running-indicator"><div className="dot" />Applying to jobs...</div>}
           {msg && !running && <div style={{ fontSize: "13px", color: "#00ff88" }}>{msg}</div>}
         </div>
@@ -514,15 +409,25 @@ function Resume() {
   const [file, setFile] = useState(null);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [uploaded, setUploaded] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API}/resume-status`, { headers: authHeaders() })
+      .then(r => r.json()).then(data => setUploaded(data.uploaded));
+  }, []);
 
   const upload = async () => {
     if (!file) return;
     const form = new FormData();
     form.append("resume", file);
     try {
-      const res = await fetch(`${API}/upload-resume`, { method: "POST", credentials: "include", body: form });
+      const res = await fetch(`${API}/upload-resume`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${getToken()}` },
+        body: form
+      });
       const data = await res.json();
-      if (data.success) setMsg("Resume uploaded successfully");
+      if (data.success) { setMsg("Resume uploaded and saved"); setUploaded(true); }
       else setError(data.error);
     } catch { setError("Upload failed"); }
   };
@@ -533,6 +438,7 @@ function Resume() {
       <div className="page-sub">Upload your resume so JobBot can apply on your behalf</div>
       <div className="card">
         <div className="card-title">Upload Resume</div>
+        {uploaded && <div className="resume-status">✓ Resume on file — JobBot is using this to apply</div>}
         <div className="upload-area" onClick={() => document.getElementById("resume-input").click()}>
           <div className="upload-icon">📄</div>
           <div className="upload-text">{file ? file.name : <><span>Click to upload</span> your resume (PDF)</>}</div>
@@ -554,14 +460,16 @@ function Preferences() {
   const [companies, setCompanies] = useState([]);
   const [compInput, setCompInput] = useState("");
   const [msg, setMsg] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch(`${API}/preferences`, { credentials: "include" })
+    fetch(`${API}/preferences`, { headers: authHeaders() })
       .then(r => r.json()).then(data => {
         if (data.keywords) setKeywords(data.keywords);
         if (data.location) setLocation(data.location);
         if (data.remote !== undefined) setRemote(data.remote);
         if (data.companies) setCompanies(data.companies);
+        setLoaded(true);
       });
   }, []);
 
@@ -571,8 +479,7 @@ function Preferences() {
   const save = async () => {
     const res = await fetch(`${API}/preferences`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
+      headers: authHeaders(),
       body: JSON.stringify({ keywords, location, remote, companies })
     });
     const data = await res.json();
@@ -583,6 +490,9 @@ function Preferences() {
     <>
       <div className="page-title">Preferences</div>
       <div className="page-sub">Tell JobBot what roles to apply for</div>
+      {loaded && (keywords.length > 0 || location) && (
+        <div className="resume-status" style={{ marginBottom: "20px" }}>✓ Preferences saved — JobBot is using these settings</div>
+      )}
       <div className="card">
         <div className="card-title">Job Keywords</div>
         <div className="tag-input-wrapper">
@@ -626,7 +536,7 @@ function Applications() {
   const [apps, setApps] = useState([]);
 
   useEffect(() => {
-    fetch(`${API}/applications`, { credentials: "include" })
+    fetch(`${API}/applications`, { headers: authHeaders() })
       .then(r => r.json()).then(data => { if (Array.isArray(data)) setApps(data); });
   }, []);
 
@@ -644,11 +554,7 @@ function Applications() {
           <table className="applications-table">
             <thead>
               <tr>
-                <th>Job Title</th>
-                <th>Company</th>
-                <th>Status</th>
-                <th>Date</th>
-                <th>Link</th>
+                <th>Job Title</th><th>Company</th><th>Status</th><th>Date</th><th>Link</th>
               </tr>
             </thead>
             <tbody>
