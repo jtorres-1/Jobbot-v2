@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sqlite3
 import os
@@ -11,12 +11,10 @@ from applier import apply_to_job
 import threading
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "changeme")
-CORS(app, supports_credentials=True)
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=False)
 
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
 DB = "jobbot.db"
 
@@ -27,6 +25,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE,
         password TEXT,
+        token TEXT,
         stripe_customer_id TEXT,
         stripe_subscription_id TEXT,
         subscribed INTEGER DEFAULT 0,
@@ -59,26 +58,41 @@ init_db()
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def get_user(email):
+def get_user_by_token(token):
+    if not token:
+        return None
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE email=?", (email,))
+    c.execute("SELECT * FROM users WHERE token=?", (token,))
     user = c.fetchone()
     conn.close()
     return user
+
+def auth_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        user = get_user_by_token(token)
+        if not user:
+            return jsonify({"error": "Not logged in"}), 401
+        request.user = user
+        return f(*args, **kwargs)
+    return decorated
 
 @app.route("/api/register", methods=["POST"])
 def register():
     data = request.json
     email = data.get("email")
     password = hash_password(data.get("password"))
+    token = secrets.token_hex(32)
     try:
         conn = sqlite3.connect(DB)
         c = conn.cursor()
-        c.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, password))
+        c.execute("INSERT INTO users (email, password, token) VALUES (?, ?, ?)", (email, password, token))
         conn.commit()
         conn.close()
-        return jsonify({"success": True})
+        return jsonify({"success": True, "token": token, "email": email, "subscribed": 0})
     except:
         return jsonify({"error": "Email already exists"}), 400
 
@@ -87,25 +101,21 @@ def login():
     data = request.json
     email = data.get("email")
     password = hash_password(data.get("password"))
-    user = get_user(email)
-    if user and user[2] == password:
-        session["user_id"] = user[0]
-        session["email"] = email
-        return jsonify({"success": True, "subscribed": user[5]})
-    return jsonify({"error": "Invalid credentials"}), 401
-
-@app.route("/api/logout", methods=["POST"])
-def logout():
-    session.clear()
-    return jsonify({"success": True})
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE email=? AND password=?", (email, password))
+    user = c.fetchone()
+    conn.close()
+    if not user:
+        return jsonify({"error": "Invalid credentials"}), 401
+    return jsonify({"success": True, "token": user[3], "email": email, "subscribed": user[6]})
 
 @app.route("/api/subscribe", methods=["POST"])
+@auth_required
 def subscribe():
-    if "user_id" not in session:
-        return jsonify({"error": "Not logged in"}), 401
     data = request.json
     token = data.get("token")
-    email = session["email"]
+    email = request.user[1]
     try:
         customer = stripe.Customer.create(email=email, source=token)
         subscription = stripe.Subscription.create(
@@ -115,7 +125,7 @@ def subscribe():
         conn = sqlite3.connect(DB)
         c = conn.cursor()
         c.execute("UPDATE users SET stripe_customer_id=?, stripe_subscription_id=?, subscribed=1 WHERE id=?",
-                  (customer.id, subscription.id, session["user_id"]))
+                  (customer.id, subscription.id, request.user[0]))
         conn.commit()
         conn.close()
         return jsonify({"success": True})
@@ -123,9 +133,8 @@ def subscribe():
         return jsonify({"error": str(e)}), 400
 
 @app.route("/api/preferences", methods=["POST"])
+@auth_required
 def save_preferences():
-    if "user_id" not in session:
-        return jsonify({"error": "Not logged in"}), 401
     data = request.json
     keywords = ",".join(data.get("keywords", []))
     location = data.get("location", "")
@@ -133,20 +142,19 @@ def save_preferences():
     companies = ",".join(data.get("companies", []))
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-    c.execute("DELETE FROM preferences WHERE user_id=?", (session["user_id"],))
+    c.execute("DELETE FROM preferences WHERE user_id=?", (request.user[0],))
     c.execute("INSERT INTO preferences (user_id, keywords, location, remote, companies) VALUES (?, ?, ?, ?, ?)",
-              (session["user_id"], keywords, location, remote, companies))
+              (request.user[0], keywords, location, remote, companies))
     conn.commit()
     conn.close()
     return jsonify({"success": True})
 
 @app.route("/api/preferences", methods=["GET"])
+@auth_required
 def get_preferences():
-    if "user_id" not in session:
-        return jsonify({"error": "Not logged in"}), 401
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-    c.execute("SELECT * FROM preferences WHERE user_id=?", (session["user_id"],))
+    c.execute("SELECT * FROM preferences WHERE user_id=?", (request.user[0],))
     pref = c.fetchone()
     conn.close()
     if not pref:
@@ -159,28 +167,28 @@ def get_preferences():
     })
 
 @app.route("/api/upload-resume", methods=["POST"])
+@auth_required
 def upload_resume():
-    if "user_id" not in session:
-        return jsonify({"error": "Not logged in"}), 401
     file = request.files.get("resume")
     if not file:
         return jsonify({"error": "No file"}), 400
-    path = f"resumes/{session['user_id']}.pdf"
+    path = f"resumes/{request.user[0]}.pdf"
     os.makedirs("resumes", exist_ok=True)
     file.save(path)
     return jsonify({"success": True})
 
-@app.route("/api/run", methods=["POST"])
-def run_bot():
-    if "user_id" not in session:
-        return jsonify({"error": "Not logged in"}), 401
-    user = get_user(session["email"])
-    if not user[5]:
-        return jsonify({"error": "Subscription required"}), 403
+@app.route("/api/resume-status", methods=["GET"])
+@auth_required
+def resume_status():
+    path = f"resumes/{request.user[0]}.pdf"
+    return jsonify({"uploaded": os.path.exists(path)})
 
+@app.route("/api/run", methods=["POST"])
+@auth_required
+def run_bot():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-    c.execute("SELECT * FROM preferences WHERE user_id=?", (session["user_id"],))
+    c.execute("SELECT * FROM preferences WHERE user_id=?", (request.user[0],))
     pref = c.fetchone()
     conn.close()
 
@@ -191,7 +199,8 @@ def run_bot():
     location = pref[3]
     remote = bool(pref[4])
     companies = pref[5].split(",") if pref[5] else []
-    resume_path = f"resumes/{session['user_id']}.pdf"
+    resume_path = f"resumes/{request.user[0]}.pdf"
+    user_id = request.user[0]
 
     if not os.path.exists(resume_path):
         return jsonify({"error": "Upload resume first"}), 400
@@ -204,7 +213,7 @@ def run_bot():
         for job in jobs:
             result = apply_to_job(job, resume_data)
             c.execute("INSERT INTO applications (user_id, job_title, company, job_url, status) VALUES (?, ?, ?, ?, ?)",
-                      (session["user_id"], job["title"], job["company"], job["url"], result["status"]))
+                      (user_id, job["title"], job["company"], job["url"], result["status"]))
         conn.commit()
         conn.close()
 
@@ -212,13 +221,12 @@ def run_bot():
     return jsonify({"success": True, "message": "Bot is running"})
 
 @app.route("/api/applications", methods=["GET"])
+@auth_required
 def get_applications():
-    if "user_id" not in session:
-        return jsonify({"error": "Not logged in"}), 401
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute("SELECT job_title, company, job_url, status, applied_at FROM applications WHERE user_id=? ORDER BY applied_at DESC",
-              (session["user_id"],))
+              (request.user[0],))
     apps = c.fetchall()
     conn.close()
     return jsonify([{"title": a[0], "company": a[1], "url": a[2], "status": a[3], "date": a[4]} for a in apps])
