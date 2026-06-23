@@ -1,123 +1,87 @@
-import requests
-import anthropic
-import json
+from playwright.sync_api import sync_playwright
+import os
+import time
 
-client = anthropic.Anthropic()
+def fill_form(page, resume_data, pdf_path):
+    first = resume_data.get('name', '').split()[0] if resume_data.get('name') else ''
+    last = ' '.join(resume_data.get('name', '').split()[1:])
+    email = resume_data.get('email', '')
+    phone = resume_data.get('phone', '')
+    for sel, val in [
+        ('input[name*=first]', first), ('input[id*=first]', first),
+        ('input[name*=last]', last), ('input[id*=last]', last),
+        ('input[name*=email]', email), ('input[id*=email]', email),
+        ('input[type=email]', email),
+        ('input[name*=phone]', phone), ('input[id*=phone]', phone),
+        ('input[name*=name]', first),
+    ]:
+        try:
+            el = page.locator(sel).first
+            if el.is_visible() and el.count() > 0:
+                el.fill(val)
+        except:
+            pass
+    for sel in ['input[type=file][name*=resume]', 'input[type=file][id*=resume]', 'input[type=file][name*=cv]', 'input[type=file]']:
+        try:
+            el = page.locator(sel).first
+            if el.count() > 0:
+                el.set_input_files(pdf_path)
+                break
+        except:
+            pass
 
-def generate_custom_answer(question, resume_data):
-    prompt = f"""You are filling out a job application on behalf of this candidate.
+def find_submit(page):
+    for sel in ['input[type=submit]', 'button[type=submit]']:
+        try:
+            els = page.locator(sel).all()
+            for el in els:
+                if el.is_visible():
+                    return el
+        except:
+            pass
+    return None
 
-Candidate info:
-Name: {resume_data['name']}
-Skills: {', '.join(resume_data['skills'])}
-Resume: {resume_data['raw_text'][:2000]}
-
-Answer this application question in 2-3 sentences, first person, professional but natural:
-{question}
-
-Return only the answer, nothing else."""
-
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=300,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return message.content[0].text.strip()
-
-def apply_greenhouse(job, resume_data):
-    try:
-        company = job["company"]
-        job_id = job["id"]
-
-        info_url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs/{job_id}"
-        r = requests.get(info_url, timeout=10)
-        if r.status_code != 200:
-            return {"status": "failed", "reason": "could not fetch job details"}
-
-        job_data = r.json()
-        questions = job_data.get("questions", [])
-
-        payload = {
-            "first_name": resume_data["name"].split()[0] if resume_data["name"] else "",
-            "last_name": " ".join(resume_data["name"].split()[1:]) if resume_data["name"] else "",
-            "email": resume_data["email"],
-            "phone": resume_data["phone"],
-            "resume": open(resume_data["pdf_path"], "rb").read().hex(),
-        }
-
-        for q in questions:
-            label = q.get("label", "")
-            field = q.get("fields", [{}])[0]
-            field_name = field.get("name", "")
-            field_type = field.get("type", "")
-            if field_type in ["input_text", "textarea"] and label and field_name:
-                if field_name not in ["first_name", "last_name", "email", "phone", "resume"]:
-                    payload[field_name] = generate_custom_answer(label, resume_data)
-
-        submit_url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs/{job_id}/applications"
-        response = requests.post(submit_url, json=payload, timeout=15)
-
-        if response.status_code in [200, 201]:
-            return {"status": "applied", "job": job["title"], "company": company}
-        else:
-            return {"status": "failed", "reason": response.text}
-
-    except Exception as e:
-        return {"status": "failed", "reason": str(e)}
-
-def apply_lever(job, resume_data):
-    try:
-        company = job["company"]
-        job_id = job["id"]
-
-        payload = {
-            "name": resume_data["name"],
-            "email": resume_data["email"],
-            "phone": resume_data["phone"],
-            "resume": open(resume_data["pdf_path"], "rb").read().hex(),
-        }
-
-        submit_url = f"https://jobs.lever.co/{company}/{job_id}/apply"
-        response = requests.post(submit_url, json=payload, timeout=15)
-
-        if response.status_code in [200, 201]:
-            return {"status": "applied", "job": job["title"], "company": company}
-        else:
-            return {"status": "failed", "reason": response.text}
-
-    except Exception as e:
-        return {"status": "failed", "reason": str(e)}
-
-def apply_workable(job, resume_data):
-    try:
-        company = job["company"]
-        job_id = job["id"]
-
-        payload = {
-            "firstname": resume_data["name"].split()[0] if resume_data["name"] else "",
-            "lastname": " ".join(resume_data["name"].split()[1:]) if resume_data["name"] else "",
-            "email": resume_data["email"],
-            "phone": resume_data["phone"],
-        }
-
-        submit_url = f"https://apply.workable.com/api/v1/widget/accounts/{company}/jobs/{job_id}/candidates"
-        response = requests.post(submit_url, json=payload, timeout=15)
-
-        if response.status_code in [200, 201]:
-            return {"status": "applied", "job": job["title"], "company": company}
-        else:
-            return {"status": "failed", "reason": response.text}
-
-    except Exception as e:
-        return {"status": "failed", "reason": str(e)}
+def get_apply_url(page):
+    for sel in ['a:has-text("Apply Now")', 'a:has-text("Apply for this job")', 'a:has-text("Apply")', 'a[href*=apply]']:
+        try:
+            el = page.locator(sel).first
+            if el.count() > 0 and el.is_visible():
+                href = el.get_attribute('href')
+                if href and href.startswith('http') and 'remotive' not in href:
+                    return href
+        except:
+            pass
+    return None
 
 def apply_to_job(job, resume_data):
-    source = job.get("source")
-    if source == "greenhouse":
-        return apply_greenhouse(job, resume_data)
-    elif source == "lever":
-        return apply_lever(job, resume_data)
-    elif source == "workable":
-        return apply_workable(job, resume_data)
-    else:
-        return {"status": "failed", "reason": "unknown source"}
+    url = job.get('url', '')
+    pdf_path = resume_data.get('pdf_path', '')
+    if not url or not os.path.exists(pdf_path):
+        return {'status': 'failed', 'reason': 'missing url or resume'}
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+            page = context.new_page()
+            page.goto(url, timeout=30000)
+            page.wait_for_load_state('networkidle')
+            time.sleep(2)
+            apply_url = get_apply_url(page)
+            if not apply_url:
+                browser.close()
+                return {'status': 'failed', 'reason': 'no apply link found'}
+            page.goto(apply_url, timeout=30000)
+            page.wait_for_load_state('networkidle')
+            time.sleep(2)
+            fill_form(page, resume_data, pdf_path)
+            submit = find_submit(page)
+            if submit:
+                submit.click()
+                time.sleep(3)
+                browser.close()
+                return {'status': 'applied', 'job': job.get('title'), 'company': job.get('company')}
+            else:
+                browser.close()
+                return {'status': 'failed', 'reason': 'no submit button found'}
+    except Exception as e:
+        return {'status': 'failed', 'reason': str(e)}
